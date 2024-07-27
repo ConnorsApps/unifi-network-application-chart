@@ -1,0 +1,145 @@
+# See how to use truecharts common: https://truecharts.org/common
+
+image:
+  # https://hub.docker.com/r/linuxserver/unifi-network-application
+  repository: lscr.io/linuxserver/unifi-network-application
+  tag: "8.3.32"
+  pullPolicy: IfNotPresent
+
+workload:
+  main:
+    enabled: true
+    primary: true
+    replicas: 1
+    type: StatefulSet
+    podSpec:
+      containers:
+        main:
+          enabled: true
+          name: network-app
+          imageSelector: image
+          fixedEnv:
+            TZ: 'Etc/UTC'
+          probes:
+            liveness:
+              enabled: true
+              type: https
+              port: 8443
+              path: '/'
+            readiness:
+              enabled: true
+              type: https
+              port: 8443
+              path: '/'
+            startup:
+              enabled: true
+              type: https
+              port: 8443
+              path: '/'
+          envFrom:
+          - configMapRef:
+              name: env
+              optional: false
+          env:
+            MONGO_PASS:
+              secretKeyRef:
+                name: mongo-password
+                key: unifi
+                expandObjectName: true
+          securityContext:
+            runAsNonRoot: false
+            # As far as I can tell, the image needs to run as root
+            runAsUser: 0
+            runAsGroup: 0
+            readOnlyRootFilesystem: false
+            allowPrivilegeEscalation: false
+            privileged: false
+            
+service:
+  main:
+    enabled: true
+    type: ClusterIP
+    ports:
+      main:
+        enabled: true
+        port: 8443
+        protocol: https
+      stun:
+        enabled: true
+        port: 3478
+        protocol: udp
+      ap-discovery:
+        enabled: true
+        port: 10001
+        protocol: udp
+      device-com: # device-communication
+        enabled: true
+        port: 8080
+        protocol: tcp
+      l2-discovery:
+        enabled: true
+        port: 1900
+        protocol: udp
+
+persistence:
+  config-data:
+    enabled: true
+    size: 15Gi
+    storageClass: storage-class
+    type: pvc
+    objectName: config-data
+    targetSelector:
+      main:
+        main:
+          mountPath: /config
+
+configmap:
+  env:
+    enabled: true
+    type: configmap
+    data:
+      MONGO_USER: unifi
+      MONGO_PORT: '27017'
+      MONGO_DBNAME: unifi
+      MEM_LIMIT: '1024'
+      MEM_STARTUP: '1024'
+      MONGO_HOST: unifi-mongo
+      MONGO_TLS: 'false'
+
+secret:
+  mongo-password:
+    enabled: true
+    type: secret
+    data:
+      unifi: "replace-me"
+
+# https://github.com/bitnami/charts/blob/main/bitnami/mongodb/values.yaml
+mongo:
+  enabled: true
+  architecture: standalone
+  replicaCount: 1
+  auth:
+    rootPassword: ''
+    replicaSetKey: ''
+  resources:
+    requests:
+      cpu: 500m
+      memory: 512Mi
+    limits:
+      cpu: '1'
+      memory: 2024Mi
+  initdbScripts:
+    init-mongo.js: |
+      db.getSiblingDB("unifi").createUser(
+        {
+          user: "unifi",
+          pwd: "replace-me",
+          roles: [{role: "dbOwner", db: "unifi"},{role: "dbOwner", db: "unifi_stat"}],
+        }
+      );
+  updateStrategy:
+    type: Recreate
+  persistence:
+    enabled: true
+    storageClass: storage-class
+    size: 30Gi
