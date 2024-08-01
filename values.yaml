@@ -13,6 +13,9 @@ workload:
     replicas: 1
     type: StatefulSet
     podSpec:
+      # Container doesn't shut itself down properly
+      # So we need to give it a little nudge. kill -9
+      terminationGracePeriodSeconds: 10
       containers:
         main:
           enabled: true
@@ -143,3 +146,13 @@ mongo:
     enabled: true
     storageClass: storage-class
     size: 30Gi
+  livenessProbe:
+    initialDelaySeconds: 30
+    periodSeconds: 20
+    timeoutSeconds: 20
+    failureThreshold: 10
+  readinessProbe:
+    initialDelaySeconds: 10
+    periodSeconds: 10
+    timeoutSeconds: 10
+    failureThreshold: 10
