@@ -8,7 +8,7 @@ Chart templates built using [Truecharts common](https://truecharts.org/common).
 
 
 ## TLS
-Todo, explain how to update default cert with `keytool`.
+You can update TLS manually with `keytool`.
 
 ```sh
 src_pass="-srcstorepass aircontrolenterprise"
@@ -23,8 +23,8 @@ keytool -delete -alias unifi $pass -keystore ./keystore
 keytool -changealias -alias server -destalias unifi $pass -keystore ./keystore
 ```
 
-## Ingress
-For ingress I'm using [Istio](https://istio.io/latest/) which I'm not including templates for in this chart.
+## Istio Ingress
+For ingress I'm using [Istio](https://istio.io/latest/). The destination rule makes Istio ignore the insecure TLS and terminates TLS with its own valid cert. With this you don't have to worry about managing TLS within the pod.
 
 ```yaml
 apiVersion: networking.istio.io/v1alpha3
@@ -41,14 +41,28 @@ spec:
       protocol: HTTP
       name: http-unifi
   - hosts:
-      - unifi.my-domain.com
+    - '*.my-domain.com.com'
     port:
+      name: https-my-domain
       number: 443
       protocol: HTTPS
-      name: https-unifi
-	# Unifi requires to host the TLS cert itself
     tls:
-      mode: PASSTHROUGH
+      credentialName: my-domain-certificate
+      mode: SIMPLE
+---
+apiVersion: networking.istio.io/v1
+kind: DestinationRule
+metadata:
+  name: unifi-tls
+spec:
+  host: "unifi.unifi.svc.cluster.local"
+  trafficPolicy:
+    portLevelSettings:
+    - port:
+        number: 8443
+      tls:
+        mode: SIMPLE
+        insecureSkipVerify: true
 ---
 apiVersion: networking.istio.io/v1beta1
 kind: VirtualService
@@ -59,16 +73,6 @@ spec:
   - istio-system/ingress-gateway
   hosts:
   - unifi.my-domain.com
-  tls:
-  - match:
-    - port: 443
-      sniHosts:
-      - unifi.my-domain.com
-    route:
-    - destination:
-        host: unifi.unifi.svc.cluster.local
-        port:
-          number: 8443
   http:
   - match:
     - port: 8080
@@ -77,4 +81,11 @@ spec:
         host: unifi.unifi.svc.cluster.local
         port:
           number: 8080
+  - match:
+    - port: 443
+    route:
+    - destination:
+        host: unifi.unifi.svc.cluster.local
+        port:
+          number: 8443
 ```
